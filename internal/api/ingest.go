@@ -15,3 +15,7 @@ func (a *API) IngestOnce(ctx context.Context) (int, error) {
 func (a *API) QueryByUser(ctx context.Context, userID int) ([]models.EnrichedPost, error) {
 	return a.ing.QueryByUser(ctx, userID)
 }
+
+func (a *API) QueryRecent(ctx context.Context, limit, offset int) ([]models.EnrichedPost, error) {
+	return a.ing.QueryRecent(ctx, limit, offset)
+}

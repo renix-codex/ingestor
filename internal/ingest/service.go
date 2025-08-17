@@ -32,6 +32,10 @@ func (s *Service) QueryByUser(ctx context.Context, userID int) ([]models.Enriche
 	return s.store.QueryByUser(ctx, userID)
 }
 
+func (s *Service) QueryRecent(ctx context.Context, limit, offset int) ([]models.EnrichedPost, error) {
+	return s.store.QueryRecent(ctx, limit, offset)
+}
+
 func New(store StorePort, collector CollectorPort, source string, now func() time.Time) *Service {
 	if now == nil {
 		now = time.Now

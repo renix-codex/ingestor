@@ -37,8 +37,14 @@ func (f *fakeStoreOK) Upsert(ctx context.Context, items []models.EnrichedPost) e
 }
 func (f *fakeStoreOK) QueryByUser(ctx context.Context, userID int) ([]models.EnrichedPost, error) {
 	return []models.EnrichedPost{{
-		UserID: userID, ID: 99, Title: "t", Body: "b", IngestedAt: time.Now().UTC(), Source: "src",
+		UserID: userID, ID: 99, Title: "t", Body: "b",
+		IngestedAt: time.Now().UTC(), Source: "src",
 	}}, nil
+}
+
+// implement the exact signature expected by StorePort
+func (f *fakeStoreOK) QueryRecent(ctx context.Context, limit, offset int) ([]models.EnrichedPost, error) {
+	return []models.EnrichedPost{}, nil
 }
 
 type fakeStoreFail struct{}
@@ -48,6 +54,11 @@ func (fakeStoreFail) Upsert(ctx context.Context, items []models.EnrichedPost) er
 }
 func (fakeStoreFail) QueryByUser(ctx context.Context, userID int) ([]models.EnrichedPost, error) {
 	return nil, errors.New("db read failed")
+}
+
+// implement the exact signature expected by StorePort
+func (fakeStoreFail) QueryRecent(ctx context.Context, limit, offset int) ([]models.EnrichedPost, error) {
+	return nil, errors.New("db recent read failed")
 }
 
 func TestService_IngestOnce_Success(t *testing.T) {

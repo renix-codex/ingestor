@@ -84,3 +84,40 @@ func (s *PGStore) QueryByUser(ctx context.Context, userID int) ([]models.Enriche
 	}
 	return out, rows.Err()
 }
+
+func (s *PGStore) QueryRecent(ctx context.Context, limit, offset int) ([]models.EnrichedPost, error) {
+	// sane limits
+	if limit <= 0 {
+		limit = 50
+	}
+	if limit > 500 {
+		limit = 500
+	}
+	if offset < 0 {
+		offset = 0
+	}
+
+	rows, err := s.pool.Query(ctx, `
+SELECT doc
+FROM posts
+ORDER BY ingested_at DESC, id DESC
+LIMIT $1 OFFSET $2
+`, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []models.EnrichedPost
+	for rows.Next() {
+		var raw []byte
+		if err := rows.Scan(&raw); err != nil {
+			return nil, err
+		}
+		var e models.EnrichedPost
+		if err := json.Unmarshal(raw, &e); err == nil {
+			out = append(out, e)
+		}
+	}
+	return out, rows.Err()
+}
