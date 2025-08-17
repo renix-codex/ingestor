@@ -129,6 +129,10 @@ Return ingested posts.
 
 userId (optional, int): If provided, returns posts for that user only.
 
+limit (optional, int, default 50, max 500): Page size when userId is omitted.
+
+offset (optional, int, default 0): Page offset when userId is omitted.
+
 ***Responses***
 
 200 OK
@@ -144,7 +148,9 @@ userId (optional, int): If provided, returns posts for that user only.
       "ingested_at": "2025-08-17T02:03:04Z",
       "source": "placeholder_api"
     }
-  ]
+  ],
+  "limit": 50,
+  "offset": 0
 }
 ```
 400 Bad Request — invalid query (e.g., userId not an integer)
