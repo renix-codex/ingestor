@@ -112,3 +112,156 @@ az containerapp create -g $RG -n $APP --environment ${APP}-env \
 Grab the URL shown by the command and hit /healthz.
 
 Production: put secrets in Azure Key Vault, restrict DB network, or use private networking.
+
+
+## **API Endpoints**
+
+### **GET** /healthz
+
+Purpose: Liveness probe.
+Response: 200 OK with body ok.
+
+### **GET** /posts
+
+Return ingested posts.
+
+***Query parameters***
+
+userId (optional, int): If provided, returns posts for that user only.
+
+***Responses***
+
+200 OK
+
+```
+{
+  "items": [
+    {
+      "userId": 1,
+      "id": 1,
+      "title": "sunt aut facere repellat provident occaecati",
+      "body": "quia et suscipit...",
+      "ingested_at": "2025-08-17T02:03:04Z",
+      "source": "placeholder_api"
+    }
+  ]
+}
+```
+400 Bad Request — invalid query (e.g., userId not an integer)
+
+500 Internal Server Error — storage/read failure
+
+***Examples***
+
+All recent (paginated):
+```
+curl "http://localhost:8080/posts?limit=20&offset=0"
+```
+
+Only for a user:
+```
+curl "http://localhost:8080/posts?userId=1"
+```
+
+Note: All HTTP calls are routed through the API layer (internal/api) which delegates to the ingest service.
+
+## **Transformation Logic**
+
+Input (from upstream API):
+```
+{
+  "userId": <int>,
+  "id": <int>,
+  "title": <string>,
+  "body": <string>
+}
+```
+
+### Enrichment (ingest.Enrich)
+
+Adds:
+ingested_at: set at processing time, UTC (time.Now().UTC() via injected clock).
+
+source: static string from config/env (SOURCE_NAME, e.g., "placeholder_api").
+
+Passes through the original fields unchanged (userId, id, title, body).
+
+### Determinism & idempotency
+
+Storage uses upsert on (user_id, id); reruns won’t create duplicates.
+
+On re-ingest, ingested_at is updated to the new run time (documented behavior).
+
+If you need “first_seen_at” semantics, add a separate column and only set it on insert.
+
+### Validation & error handling
+
+Non-2xx upstream → error (no writes).
+Invalid JSON → error (no writes).
+Timeouts → error (configurable HTTP_TIMEOUT).
+
+## Database Schema (PostgreSQL)
+
+Table is auto-created on startup.
+```
+CREATE TABLE IF NOT EXISTS posts (
+  user_id     INT            NOT NULL,
+  id          INT            NOT NULL,
+  title       TEXT           NOT NULL,
+  body        TEXT           NOT NULL,
+  ingested_at TIMESTAMPTZ    NOT NULL,   -- always UTC
+  source      TEXT           NOT NULL,
+  doc         JSONB          NOT NULL,   -- full enriched record for easy retrieval
+  PRIMARY KEY (user_id, id)
+);
+
+-- Hot filters & search helpers
+CREATE INDEX IF NOT EXISTS idx_posts_user_id  ON posts(user_id);
+CREATE INDEX IF NOT EXISTS idx_posts_doc_gin ON posts USING GIN (doc);
+```
+
+### Storage strategy
+
+Primary key: (user_id, id) ensures idempotent upserts.
+
+Typed columns: fast filters/sorts by user_id, id, ingested_at, etc.
+
+doc JSONB: exact copy of the enriched payload for simple reads and ad-hoc queries.
+
+### Write path (upsert)
+```
+INSERT INTO posts (user_id,id,title,body,ingested_at,source,doc)
+VALUES ($1,$2,$3,$4,$5,$6,$7)
+ON CONFLICT (user_id,id) DO UPDATE SET
+  title=EXCLUDED.title,
+  body=EXCLUDED.body,
+  ingested_at=EXCLUDED.ingested_at,
+  source=EXCLUDED.source,
+  doc=EXCLUDED.doc;
+```
+
+### Common queries
+
+By user:
+```
+SELECT doc
+FROM posts
+WHERE user_id = $1
+ORDER BY id ASC;
+```
+
+Recent (pagination):
+```
+SELECT doc
+FROM posts
+ORDER BY ingested_at DESC, id DESC
+LIMIT $1 OFFSET $2;
+```
+
+### Notes
+
+All timestamps are stored as TIMESTAMPTZ and must be UTC.
+
+No manual migrations are required; schema is bootstrapped at service start.
+
+For very large volumes, consider additional indexes (e.g., on ingested_at) and/or partitioning by time.
